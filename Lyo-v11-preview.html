@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-TW">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Lyo. V11 · 裝置與時間預覽</title>
+<style>
+[hidden]{display:none!important}
+*{box-sizing:border-box}html,body{height:100%;margin:0}body{display:flex;flex-direction:column;background:#e9eae5;font-family:system-ui;color:#283c31}header{flex-shrink:0;padding:12px 18px;background:#fff;border-bottom:1px solid #ddd}.device-row,.time-row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.device-row{margin-bottom:12px}strong{color:#a35337;margin-right:6px}button{min-height:40px;padding:9px 13px;border:1px solid #d4d9d0;border-radius:10px;background:#fff;color:#283c31;font:inherit;font-size:13px;cursor:pointer;touch-action:manipulation}button[aria-pressed=true]{background:#a35337;color:#fff;border-color:#a35337}button:disabled{opacity:.45;cursor:wait}button:focus-visible{outline:3px solid #3168a0;outline-offset:2px}.time-panel{padding-top:12px;border-top:1px solid #e8e8e0}.time-label{font-size:13px;font-weight:650}.time-display{font-size:14px;font-variant-numeric:tabular-nums;margin-right:6px}.time-row button{min-width:66px}.time-help{margin:8px 0 0;font-size:12px;line-height:1.7;color:#626858}.size-row{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;font-size:12px}.scale-controls{display:flex;gap:6px}.scale-controls button{font-size:12px;padding:6px 10px;min-height:32px}#clock-status{font-size:12px;color:#696958}#status{min-height:18px;font-size:12px;color:#a35337;margin-top:6px}main{flex:1;min-height:0;padding:18px;overflow:auto;overscroll-behavior:contain}#stage{position:relative;margin:0 auto;flex-shrink:0}iframe{position:absolute;left:0;top:0;display:block;max-width:none;border:0;background:white;transform-origin:top left;box-shadow:0 6px 30px #21352020}.note{font-size:12px;color:#626858}@media(max-width:500px){header{padding:10px 12px}.device-row>strong{width:100%}.time-display{width:100%}.time-row{gap:6px}.time-row button{padding:8px 10px;min-width:60px}main{padding:12px}}@media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}}
+</style>
+<header>
+ <div class="device-row"><strong>Lyo. V11 · 互動預覽</strong><button data-device="desktop" aria-pressed="true">桌面 / Desktop</button><button data-device="phone" aria-pressed="false">iPhone 12</button><button data-device="tablet" aria-pressed="false">iPad mini 直向</button><button data-device="landscape" aria-pressed="false">iPad mini 橫向</button></div>
+ <section class="time-panel" aria-label="測試時間控制">
+  <div class="time-row"><span class="time-label">測試時間（紐約）</span><span id="clock" class="time-display" aria-live="off">正在載入…</span><span id="clock-status"></span></div>
+  <div class="time-row" style="margin-top:8px"><button data-clock-delta="-60" disabled>−1 小時</button><button data-clock-delta="-10" disabled>−10 分鐘</button><button data-clock-delta="10" disabled>＋10 分鐘</button><button data-clock-delta="60" disabled>＋1 小時</button><button id="pause-clock" disabled>暫停時鐘</button><button id="restore-clock" disabled>還原本次測試</button></div>
+  <p class="time-help">加減時間會暫停時鐘並執行活動與通知規則。倒退會回復先前保存的測試狀態；「還原」會撤回本次時間測試後的操作。</p>
+  <div id="status" role="status" aria-live="polite"></div>
+ </section>
+ <div class="size-row"><span id="size"></span><div class="scale-controls"><button data-scale="fit" aria-pressed="false">縮小以完整顯示</button><button data-scale="actual" aria-pressed="true">100% 原尺寸</button></div></div>
+ <div class="device-row" style="margin-top:8px;margin-bottom:4px"><button id="open-window">開啟獨立裝置預覽視窗</button><button id="return-window" hidden>回到這個分頁預覽</button></div>
+ <div class="note" id="window-note">選擇 iPhone／iPad 會開啟原尺寸獨立視窗，切換裝置時調整視窗寬度。一般分頁無法自動改變 Chrome 視窗大小。</div>
+</header>
+<main><p id="detached-note" hidden>App 已移到獨立視窗，操作與時間控制請在該視窗進行。關閉它即可回到這個分頁。</p><div id="stage"><iframe id="preview" title="Lyo App 預覽" allow="camera" src="Lyo-v11.html?edition=8-preview-controls"></iframe></div></main>
+<script>
+const f=document.querySelector('#preview'),stage=document.querySelector('#stage'),area=document.querySelector('main');
+const params=new URLSearchParams(location.search),managed=params.get('window')==='1'&&!!window.opener,appUrl=f.getAttribute('src');
+let mode=['desktop','phone','tablet','landscape'].includes(params.get('device'))?params.get('device'):'desktop',scaleMode='actual',clockReady=false,clockPaused=false,initialRestore=false,deviceWindow=null,detached=false,handoffPending=false,returning=false;
+function nativeSize(next=mode){return {phone:[390,844],tablet:[768,1024],landscape:[1024,768],desktop:[1200,800]}[next];}
+function fitWindow(){if(!managed)return;scaleMode='actual';const [w,h]=nativeSize(),style=getComputedStyle(area),pad=parseFloat(style.paddingLeft)+parseFloat(style.paddingRight),chromeW=Math.max(0,outerWidth-innerWidth),chromeH=Math.max(0,outerHeight-innerHeight),targetW=Math.ceil(w+pad+20+chromeW),targetH=Math.ceil(h+document.querySelector('header').offsetHeight+36+chromeH);try{window.resizeTo(Math.min(screen.availWidth,targetW),Math.min(screen.availHeight,targetH));}catch{}resize();setTimeout(()=>{const available=area.clientWidth-pad;document.querySelector('#window-note').textContent=available>=w?'獨立視窗 · 原尺寸文字；切換裝置會調整視窗寬度。高度不足時可上下捲動。':'螢幕或瀏覽器限制了視窗寬度。請放大視窗，或切換 iPad 直向；預覽仍維持 100% 原尺寸。';},180);}
+function setClockEnabled(enabled){document.querySelectorAll('[data-clock-delta],#pause-clock,#restore-clock').forEach(b=>b.disabled=!enabled);}
+function resumeEmbedded(){if(!detached&&!handoffPending)return;detached=false;handoffPending=false;deviceWindow=null;returning=false;stage.hidden=false;document.querySelector('#detached-note').hidden=true;document.querySelector('#return-window').hidden=true;document.querySelector('#open-window').textContent='開啟獨立裝置預覽視窗';document.querySelector('#clock').textContent='正在載入…';f.src=appUrl;resize();}
+function openDeviceWindow(){if(managed)return;if(deviceWindow&&!deviceWindow.closed){deviceWindow.focus();deviceWindow.postMessage({type:'lyo-preview-device8',device:mode},location.origin);return;}const [w,h]=nativeSize();deviceWindow=window.open('about:blank','lyo-v11-device-preview','popup=yes,width='+Math.min(screen.availWidth,w+56)+',height='+Math.min(screen.availHeight,h+300)+',resizable=yes,scrollbars=yes');if(!deviceWindow){document.querySelector('#window-note').textContent='獨立視窗被瀏覽器阻擋。請允許此網站的彈出式視窗，再按「開啟獨立裝置預覽視窗」。';return;}handoffPending=true;document.querySelector('#status').textContent='正在將目前操作移到獨立視窗…';if(clockReady)sendClock('handoff');}
+function changeDevice(next){if(!['desktop','phone','tablet','landscape'].includes(next))return;resize(next);if(managed){fitWindow();window.opener.postMessage({type:'lyo-preview-device-state8',device:next},location.origin);}else if(detached||next!=='desktop')openDeviceWindow();}
+function resize(next=mode){mode=next;const style=getComputedStyle(area),available=Math.max(1,area.clientWidth-parseFloat(style.paddingLeft)-parseFloat(style.paddingRight));const sizes={phone:[390,844],tablet:[768,1024],landscape:[1024,768],desktop:[Math.max(320,Math.floor(available)),Math.max(600,area.clientHeight-36)]},[w,h]=sizes[mode],scale=scaleMode==='fit'?Math.min(1,available/w):1;f.style.width=w+'px';f.style.height=h+'px';f.style.borderRadius=mode==='desktop'?'0':'22px';f.style.transform='scale('+scale+')';stage.style.width=w*scale+'px';stage.style.height=h*scale+'px';document.querySelector('#size').textContent=w+' × '+h+' CSS px · 顯示 '+Math.round(scale*100)+'%';document.querySelectorAll('[data-device]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.device===mode)));document.querySelectorAll('[data-scale]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.scale===scaleMode)));if(scaleMode==='fit')area.scrollLeft=0;}
+function sendClock(action,minutes){f.contentWindow.postMessage({type:'lyo-preview-time8',action,minutes},location.origin);}
+document.querySelectorAll('[data-device]').forEach(b=>b.addEventListener('click',()=>changeDevice(b.dataset.device)));
+document.querySelector('#open-window').addEventListener('click',openDeviceWindow);
+document.querySelector('#return-window').addEventListener('click',()=>{if(deviceWindow&&!deviceWindow.closed){returning=true;deviceWindow.postMessage({type:'lyo-preview-return8'},location.origin);}else resumeEmbedded();});
+document.querySelectorAll('[data-scale]').forEach(b=>b.addEventListener('click',()=>{scaleMode=b.dataset.scale;resize();}));
+document.querySelectorAll('[data-clock-delta]').forEach(b=>b.addEventListener('click',()=>sendClock('shift',Number(b.dataset.clockDelta))));
+document.querySelector('#pause-clock').addEventListener('click',()=>sendClock('pause'));
+document.querySelector('#restore-clock').addEventListener('click',()=>{if(!initialRestore){initialRestore=true;document.querySelector('#restore-clock').textContent='再按一次確認還原';setTimeout(()=>{initialRestore=false;document.querySelector('#restore-clock').textContent='還原本次測試';},5000);return;}sendClock('restore');initialRestore=false;document.querySelector('#restore-clock').textContent='還原本次測試';});
+f.addEventListener('load',()=>sendClock('status'));
+window.addEventListener('message',e=>{if(e.origin!==location.origin)return;
+ if(e.source===deviceWindow&&e.data?.type==='lyo-preview-device-state8'){if(['desktop','phone','tablet','landscape'].includes(e.data.device))resize(e.data.device);return;}
+ if(managed&&e.source===window.opener){if(e.data?.type==='lyo-preview-device8')changeDevice(e.data.device);if(e.data?.type==='lyo-preview-return8'){returning=true;sendClock('handoff');}return;}
+ if(e.source!==f.contentWindow)return;
+ if(e.data?.type==='lyo-preview-handoff8'){
+  if(managed&&returning){try{window.opener.sessionStorage.setItem('lyo.preview.transfer8',JSON.stringify(e.data));}catch{}window.close();return;}
+  if(!handoffPending)return;if(!deviceWindow||deviceWindow.closed){resumeEmbedded();return;}
+  detached=true;handoffPending=false;clockReady=false;setClockEnabled(false);f.src='about:blank';stage.hidden=true;document.querySelector('#detached-note').hidden=false;document.querySelector('#return-window').hidden=false;document.querySelector('#open-window').textContent='顯示獨立預覽視窗';document.querySelector('#status').textContent='已保存目前操作；請在獨立視窗中使用時間控制。';document.querySelector('#clock-status').textContent='已移至獨立視窗';
+  try{deviceWindow.sessionStorage.setItem('lyo.preview.transfer8',JSON.stringify(e.data));}catch{}
+  const url=new URL(location.href);url.searchParams.set('window','1');url.searchParams.set('device',mode);url.searchParams.set('preview','3');deviceWindow.location.href=url.href;deviceWindow.focus();return;
+ }
+ if(e.data?.type==='lyo-preview-focus')return document.querySelector('[data-device=phone]').focus();if(e.data?.type!=='lyo-preview-clock8'||detached)return;clockReady=true;clockPaused=e.data.paused;document.querySelector('#clock').textContent=new Intl.DateTimeFormat('zh-TW',{timeZone:'America/New_York',dateStyle:'medium',timeStyle:'medium',hourCycle:'h23'}).format(new Date(e.data.now));document.querySelector('#clock-status').textContent=clockPaused?'已暫停':'運行中';document.querySelector('#pause-clock').textContent=clockPaused?'繼續時鐘':'暫停時鐘';setClockEnabled(true);if(e.data.message)document.querySelector('#status').textContent=e.data.message;if(handoffPending)sendClock('handoff');});
+if(managed){document.querySelector('#open-window').hidden=true;document.querySelector('.scale-controls').hidden=true;fitWindow();}
+setInterval(()=>{if((detached||handoffPending)&&(!deviceWindow||deviceWindow.closed))resumeEmbedded();},500);
+new ResizeObserver(()=>resize()).observe(area);resize();
+</script>
+</html>
